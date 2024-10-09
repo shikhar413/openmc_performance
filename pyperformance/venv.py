@@ -152,27 +152,7 @@ def _get_envvars(inherit=None, osname=None):
 class VenvForBenchmarks(_venv.VirtualEnvironment):
 
     @classmethod
-    def create(cls, root=None, python=None, *,
-               inherit_environ=None,
-               upgrade=False,
-               ):
-        env = _get_envvars(inherit_environ)
-        self = super().create(root, python, env=env, withpip=False)
-        self.inherit_environ = inherit_environ
-
-        try:
-            self.ensure_pip(upgrade=upgrade)
-        except BaseException:
-            _utils.safe_rmtree(self.root)
-            raise
-
-        # Display the pip version
-        _pip.run_pip('--version', python=self.python, env=self._env)
-
-        return self
-
-    @classmethod
-    def ensure(cls, root, python=None, *,
+    def ensure(cls, root, openmc=None, *,
                inherit_environ=None,
                upgrade=False,
                **kwargs
@@ -196,7 +176,7 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
         else:
             return cls.create(
                 root,
-                python,
+                openmc,
                 inherit_environ=inherit_environ,
                 upgrade=upgrade,
                 **kwargs

@@ -5,7 +5,7 @@ import os.path
 import sys
 import types
 
-from . import _utils, _pythoninfo, _pip
+from . import _utils, _openmcinfo, _pip
 
 
 class VenvCreationFailedError(Exception):
@@ -73,21 +73,18 @@ def parse_venv_config(lines, root=None):
     return cfg
 
 
-def resolve_venv_python(root):
-    python_exe = 'python'
-    if sys.executable.endswith('.exe'):
-        python_exe += '.exe'
-    if os.name == "nt":
-        return os.path.join(root, 'Scripts', python_exe)
-    else:
-        return os.path.join(root, 'bin', python_exe)
+def resolve_venv_openmc(root):
+    python_package = 'openmc'
+    # Assumes that venv python version will match python version of sys.executable
+    python_version = 'python{}.{}'.format(sys.version_info.major, sys.version_info.minor)
+    return os.path.join(root, 'lib', python_version, 'site-packages', python_package)
 
 
-def get_venv_root(name=None, venvsdir='venv', *, python=sys.executable):
+def get_venv_root(openmc, name=None, venvsdir='venv'):
     """Return the venv root to use for the given name (or given python)."""
     if not name:
         from .run import get_run_id
-        runid = get_run_id(python)
+        runid = get_run_id(openmc)
         name = runid.name
     return os.path.abspath(
         os.path.join(venvsdir or '.', name),
@@ -95,11 +92,11 @@ def get_venv_root(name=None, venvsdir='venv', *, python=sys.executable):
 
 
 def venv_exists(root):
-    venv_python = resolve_venv_python(root)
-    return os.path.exists(venv_python)
+    venv_openmc = resolve_venv_openmc(root)
+    return os.path.exists(venv_openmc)
 
 
-def create_venv(root, python=sys.executable, *,
+def create_venv(root, *,
                 env=None,
                 downloaddir=None,
                 withpip=True,
@@ -111,12 +108,12 @@ def create_venv(root, python=sys.executable, *,
         args = ['-m', 'venv', root]
     else:
         args = ['-m', 'venv', '--without-pip', root]
-    ec, _, _ = _utils.run_python(*args, python=python, env=env)
+    ec, _, _ = _utils.run_python(*args, python=sys.executable, env=env)
     if ec != 0:
         if cleanonfail and not already_existed:
             _utils.safe_rmtree(root)
         raise VenvCreationFailedError(root, ec, already_existed)
-    return resolve_venv_python(root)
+    return resolve_venv_openmc(root)
 
 
 class VirtualEnvironment:
@@ -124,35 +121,37 @@ class VirtualEnvironment:
     _env = None
 
     @classmethod
-    def create(cls, root=None, python=sys.executable, **kwargs):
-        if not python:
-            python = sys.executable
-        if isinstance(python, str):
+    def create(cls, root=None, openmc=None, **kwargs):
+        if not openmc:
+            raise Exception(f'openmc executable not passed to VirtualEnvironment class')
+        if isinstance(openmc, str):
             try:
-                info = _pythoninfo.get_info(python)
+                info = _openmcinfo.get_info(openmc)
             except FileNotFoundError:
-                info = None
+                print(openmc)
+                raise Exception(f'openmc executable could not be found')
         else:
-            info = python
+            info = openmc
         if not root:
-            root = get_venv_root(python=info)
+            root = get_venv_root(openmc=info)
 
         print("Creating the virtual environment %s" % root)
         if venv_exists(root):
             raise Exception(f'virtual environment {root} already exists')
 
         try:
-            venv_python = create_venv(
+            venv_openmc = create_venv(
                 root,
-                info or python,
-                **kwargs
             )
         except BaseException:
             _utils.safe_rmtree(root)
             raise  # re-raise
         if not info:
-            info = _pythoninfo.get_info(python)
+            info = _openmcinfo.get_info(openmc)
+        venv_python = os.path.join(root, 'bin', 'python')
+        _pip.install_openmc_requirements(openmc, upgrade=False, python=venv_python)
         self = cls(root, base=info)
+        self._openmc = openmc
         self._python = venv_python
         return self
 
@@ -164,20 +163,18 @@ class VirtualEnvironment:
             return cls.create(root, python, **kwargs)
 
     def __init__(self, root, *, base=None):
-        assert os.path.exists(resolve_venv_python(root)), root
+        assert os.path.exists(resolve_venv_openmc(root)), root
         self.root = root
         if base:
             self._base = base
 
     @property
+    def openmc(self):
+        return self._openmc
+
+    @property
     def python(self):
-        try:
-            return self._python
-        except AttributeError:
-            if not getattr(self, '_info', None):
-                return resolve_venv_python(self.root)
-            self._python = self.info.sys.executable
-            return self._python
+        return self._python
 
     @property
     def info(self):
@@ -185,10 +182,10 @@ class VirtualEnvironment:
             return self._info
         except AttributeError:
             try:
-                python = self._python
+                openmc = self._openmc
             except AttributeError:
-                python = resolve_venv_python(self.root)
-            self._info = _pythoninfo.get_info(python)
+                openmc = resolve_venv_openmc(self.root)
+            self._info = _openmcinfo.get_info(openmc)
             return self._info
 
     @property
@@ -201,7 +198,7 @@ class VirtualEnvironment:
                 # XXX Use read_venv_config().
                 raise NotImplementedError
                 base_exe = ...
-            self._base = _pythoninfo.get_info(base_exe)
+            self._base = _openmcinfo.get_info(base_exe)
             return self._base
 
     def ensure_pip(self, downloaddir=None, *, installer=True, upgrade=True):

@@ -58,7 +58,7 @@ def parse_args():
 
     # run
     cmd = subparsers.add_parser(
-        'run', help='Run benchmarks on the running python')
+        'run', help='Run benchmarks on the running OpenMC')
     cmds.append(cmd)
     cmd.add_argument("-r", "--rigorous", action="store_true",
                      help=("Spend longer running tests to get more"
@@ -78,7 +78,7 @@ def parse_args():
     cmd.add_argument("-o", "--output", metavar="FILENAME",
                      help="Run the benchmarks on only one interpreter and "
                            "write benchmark into FILENAME. "
-                           "Provide only baseline_python, not changed_python.")
+                           "Provide only baseline_openmc, not changed_openmc.")
     cmd.add_argument("--append", metavar="FILENAME",
                      help="Add runs to an existing file, or create it "
                      "if it doesn't exist")
@@ -196,9 +196,9 @@ def parse_args():
                                "names that are inherited from the parent "
                                "environment when running benchmarking "
                                "subprocesses."))
-        cmd.add_argument("-p", "--python",
-                         help="Python executable (default: use running Python)",
-                         default=sys.executable)
+        cmd.add_argument("-p", "--openmc",
+                         help="OpenMC executable (default: use running Python)",
+                         default='openmc')
 
     options = parser.parse_args()
 
@@ -210,16 +210,15 @@ def parse_args():
         parser.print_help()
         sys.exit(1)
 
-    if hasattr(options, 'python'):
+    if hasattr(options, 'openmc'):
         # Replace "~" with the user home directory
-        options.python = os.path.expanduser(options.python)
+        options.openmc = os.path.expanduser(options.openmc)
         # Try to get the absolute path to the binary
-        abs_python = os.path.abspath(options.python)
-        if not abs_python:
-            print("ERROR: Unable to locate the Python executable: %r" %
-                  options.python, flush=True)
+        abs_openmc = os.path.abspath(options.openmc)
+        if not os.path.exists(abs_openmc):
+            print("ERROR: Unable to locate the OpenMC executable: {}. Please set correct path using -p flag".format(abs_openmc), flush=True)
             sys.exit(1)
-        options.python = abs_python
+        options.openmc = abs_openmc
 
     if hasattr(options, 'benchmarks'):
         if options.benchmarks == '<NONE>':
@@ -238,6 +237,8 @@ def _manifest_from_options(options):
 def _benchmarks_from_options(options):
     if not getattr(options, 'benchmarks', None):
         return None
+    return None
+    # TODO-SK handle code below
     manifest = _manifest_from_options(options)
     return _select_benchmarks(options.benchmarks, manifest)
 
@@ -262,13 +263,13 @@ def _select_benchmarks(raw, manifest):
 
     # Get the selections.
     selected = []
-    this_python_version = ".".join(map(str, sys.version_info[:3]))
+    this_openmc_version = ".".join(map(str, sys.version_info[:3]))
     for bench in _benchmark_selections.iter_selections(manifest, parsed_infos):
         if isinstance(bench, str):
             logging.warning(f"no benchmark named {bench!r}")
             continue
         # Filter out any benchmarks that can't be run on the Python version we're running
-        if this_python_version in bench.python:
+        if this_openmc_version in bench.openmc:
             selected.append(bench)
 
     return selected
@@ -285,11 +286,14 @@ def _main():
     parser, options = parse_args()
 
     if options.action == 'venv':
-        from . import _pythoninfo, _venv
+        from . import _openmcinfo, _venv
+        if not hasattr(options, 'openmc'):
+            print('ERROR: path to OpenMC executable needs to be passed in through -p to use venv command')
+            sys.exit(1)
 
         if not options.venv:
-            info = _pythoninfo.get_info(options.python)
-            root = _venv.get_venv_root(python=info)
+            info = _openmcinfo.get_info(options.openmc)
+            root = _venv.get_venv_root(openmc=info)
         else:
             root = options.venv
             info = None
@@ -297,10 +301,10 @@ def _main():
         action = options.venv_action
         if action == 'create':
             benchmarks = _benchmarks_from_options(options)
-            cmd_venv_create(options, root, info, benchmarks)
+            cmd_venv_create(options, root, options.openmc, benchmarks)
         elif action == 'recreate':
             benchmarks = _benchmarks_from_options(options)
-            cmd_venv_recreate(options, root, info, benchmarks)
+            cmd_venv_recreate(options, root, options.openmc, benchmarks)
         elif action == 'remove':
             cmd_venv_remove(options, root)
         elif action == 'show':

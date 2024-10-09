@@ -2,7 +2,7 @@ import os
 import os.path
 import sys
 
-from . import _utils, _pythoninfo
+from . import _utils, _openmcinfo
 
 
 GET_PIP_URL = 'https://bootstrap.pypa.io/get-pip.py'
@@ -25,7 +25,7 @@ def get_pkg_name(req):
 def get_best_pip_version(python):
     """Return the pip to install for the given Python executable."""
     if not python or isinstance(python, str):
-        info = _pythoninfo.get_info(python)
+        info = _openmcinfo.get_info(python)
     else:
         info = python
     # On Python: 3.5a0 <= version < 3.5.0 (final), install pip 7.1.2,
@@ -139,18 +139,19 @@ def ensure_installer(python=sys.executable, **kwargs):
     return install_requirements(*reqs, python=python, **kwargs)
 
 
-def install_requirements(reqs, *extra,
-                         upgrade=True,
-                         **kwargs
-                         ):
-    """Install the given packages from PyPI."""
+def install_openmc_requirements(openmc, *extra,
+                                upgrade=True,
+                                **kwargs
+                                ):
+    """Install the OpenMC packages from PyPI."""
     args = []
     if upgrade:
         args.append('-U')  # --upgrade
-    for reqs in [reqs, *extra]:
-        if os.path.isfile(reqs) and reqs.endswith('.txt'):
-            args.append('-r')  # --requirement
-        args.append(reqs)
+    # Assumes that openmc executable is found in /path/to/openmc/build/bin directory
+    if 'build/bin/openmc' not in openmc:
+        raise Excetion(f'openmc executable needs to be built in openmc/build/bin directory')
+    openmc_basedir = openmc.split('/build/bin')[0]
+    args.append(openmc_basedir)
     return run_pip('install', *args, **kwargs)
 
 

@@ -6,7 +6,7 @@ import time
 import traceback
 
 import pyperformance
-from . import _utils, _python, _pythoninfo
+from . import _utils, _openmc, _openmcinfo
 from .venv import VenvForBenchmarks, REQUIREMENTS_FILE
 from . import _venv
 
@@ -44,11 +44,11 @@ class RunID(namedtuple('RunID', 'python compat bench timestamp')):
             return self._name
 
 
-def get_run_id(python, bench=None):
-    py_id = _python.get_id(python, prefix=True)
+def get_run_id(openmc, bench=None):
+    openmc_id = _openmc.get_id(openmc)
     compat_id = get_compatibility_id(bench)
     ts = time.time()
-    return RunID(py_id, compat_id, bench, ts)
+    return RunID(openmc_id, compat_id, bench, ts)
 
 
 def get_loops_from_file(filename):
@@ -75,7 +75,7 @@ def run_benchmarks(should_run, python, options):
 
     to_run = sorted(should_run)
 
-    info = _pythoninfo.get_info(python)
+    info = _openmcinfo.get_info(python)
     runid = get_run_id(info)
 
     unique = getattr(options, 'unique_venvs', False)

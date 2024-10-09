@@ -128,7 +128,7 @@ def run_cmd(argv, *, env=None, capture=None, verbose=True):
 
     # XXX Use a logger.
     if verbose:
-        print('#', cmdstr)
+        print('#(bash)', cmdstr)
 
     # Explicitly flush standard streams, required if streams are buffered
     # (not TTY) to write lines in the expected order
@@ -149,12 +149,6 @@ def run_cmd(argv, *, env=None, capture=None, verbose=True):
 
 
 def run_python(*args, python=sys.executable, **kwargs):
-    if not isinstance(python, str) and python is not None:
-        try:
-            # See _pythoninfo.get_info().
-            python = python.sys.executable
-        except AttributeError:
-            raise TypeError(f'expected python str, got {python!r}')
     return run_cmd([python, *args], **kwargs)
 
 

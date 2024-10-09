@@ -38,25 +38,24 @@ INFO = {
 }
 
 
-def get_info(python=sys.executable):
-    """Return an object with details about the given Python executable.
+def get_info(openmc):
+    """Return an object with details about the given OpenMC executable.
 
     Most of the details are grouped by their source.
-
-    By default the current Python is used.
     """
-    if python and python != sys.executable:
-        # Run _pythoninfo.py to get the raw info.
-        import subprocess
-        argv = [python, __file__]
-        try:
-            text = subprocess.check_output(argv, encoding='utf-8')
-        except subprocess.CalledProcessError:
-            raise Exception(f'could not get info for {python or sys.executable}')
-        data = _unjsonify_info(text)
-    else:
-        data = _get_current_info()
-    return _build_info(data)
+    # Run _openmcinfo.py to get the raw info.
+    import subprocess
+    argv = [openmc, '-v']
+    try:
+        text = subprocess.check_output(argv, encoding='utf-8')
+    except subprocess.CalledProcessError:
+        raise Exception(f'could not get info for {openmc}')
+    text_split = text.split('\n')
+    if len(text_split) < 2 or 'Git SHA1' not in text_split[1]:
+        raise Exception(f'could not get info for {openmc}')
+    git_sha = text_split[1].split(': ', 1)[-1]
+    # TODO-SK pass other version info back if needed
+    return git_sha
 
 
 def _build_info(data):
