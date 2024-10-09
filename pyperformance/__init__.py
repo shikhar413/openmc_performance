@@ -13,6 +13,9 @@ DATA_DIR = os.path.join(PKG_ROOT, 'data-files')
 def is_installed():
     if not is_dev():
         return True
+    else:
+        return True
+    # TODO-SK make this logic more sophisticated
     if _is_venv():
         return True
     return _is_devel_install()
@@ -20,7 +23,7 @@ def is_installed():
 
 def is_dev():
     parent = os.path.dirname(PKG_ROOT)
-    return os.path.exists(os.path.join(parent, 'setup.py'))
+    return os.path.exists(os.path.join(parent, 'pyproject.toml'))
 
 
 def _is_venv():

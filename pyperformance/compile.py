@@ -16,14 +16,11 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-import pyperf
-
 import pyperformance
 from pyperformance import _utils, _pip
 
 
-GIT = True
-DEFAULT_BRANCH = 'master' if GIT else 'default'
+DEFAULT_BRANCH = 'develop'
 LOG_FORMAT = '%(asctime)-15s: %(message)s'
 
 EXIT_ALREADY_EXIST = 10
@@ -70,10 +67,7 @@ class Repository(Task):
         self.conf = app.conf
 
     def fetch(self):
-        if GIT:
-            self.run('git', 'fetch')
-        else:
-            self.run('hg', 'pull')
+        self.run('git', 'fetch')
 
     def parse_revision(self, revision):
         branch_rev = '%s/%s' % (self.conf.git_remote, revision)
@@ -93,34 +87,23 @@ class Repository(Task):
         sys.exit(1)
 
     def checkout(self, revision):
-        if GIT:
-            # remove all untracked files
-            self.run('git', 'clean', '-fdx')
+        # remove all untracked files
+        self.run('git', 'clean', '-fdx')
 
-            # checkout to requested revision
-            self.run('git', 'reset', '--hard', 'HEAD')
-            self.run('git', 'checkout', revision)
+        # checkout to requested revision
+        self.run('git', 'reset', '--hard', 'HEAD')
+        self.run('git', 'checkout', revision)
 
-            # remove all untracked files
-            self.run('git', 'clean', '-fdx')
-        else:
-            self.run('hg', 'up', '--clean', '-r', revision)
-            # FIXME: run hg purge?
+        # remove all untracked files
+        self.run('git', 'clean', '-fdx')
 
     def get_revision_info(self, revision):
-        if GIT:
-            cmd = ['git', 'show', '-s', '--pretty=format:%H|%ci', '%s^!' % revision]
-        else:
-            cmd = ['hg', 'log', '--template', '{node}|{date|isodate}', '-r', revision]
+        cmd = ['git', 'show', '-s', '--pretty=format:%H|%ci', '%s^!' % revision]
         stdout = self.get_output(*cmd)
-        if GIT:
-            node, date = stdout.split('|')
-            date = datetime.datetime.strptime(date, '%Y-%m-%d %H:%M:%S %z')
-            # convert local date to UTC
-            date = (date - date.utcoffset()).replace(tzinfo=datetime.timezone.utc)
-        else:
-            node, date = stdout.split('|')
-            date = datetime.datetime.strptime(date[:16], '%Y-%m-%d %H:%M')
+        node, date = stdout.split('|')
+        date = datetime.datetime.strptime(date, '%Y-%m-%d %H:%M:%S %z')
+        # convert local date to UTC
+        date = (date - date.utcoffset()).replace(tzinfo=datetime.timezone.utc)
         return (node, date)
 
 
@@ -139,7 +122,7 @@ class Application(object):
         date = datetime.datetime.now()
         date = date.strftime('%Y-%m-%d_%H-%M-%S.log')
         filename = '%s-%s' % (prefix, date)
-        self.log_filename = os.path.join(self.conf.directory, filename)
+        self.log_filename = os.path.join(self.conf.log_dir, filename)
 
         log = self.log_filename
         if os.path.exists(log):
@@ -231,30 +214,20 @@ class Application(object):
                 raise
 
 
-def resolve_python(prefix, builddir, *, fallback=True):
-    if sys.platform in ('darwin', 'win32'):
-        program_ext = '.exe'
-    else:
-        program_ext = ''
+def resolve_openmc(prefix, builddir):
+    program_ext = ''
 
     if prefix:
-        if sys.platform == 'darwin':
-            program_ext = ''
-        program = os.path.join(prefix, "bin", "python3" + program_ext)
+        program = os.path.join(prefix, "bin", "openmc" + program_ext)
         exists = os.path.exists(program)
-        if not exists and fallback:
-            program2 = os.path.join(prefix, "bin", "python" + program_ext)
-            if os.path.exists(program2):
-                program = program2
-                exists = True
     else:
         assert builddir
-        program = os.path.join(builddir, "python" + program_ext)
+        program = os.path.join(builddir, "openmc" + program_ext)
         exists = os.path.exists(program)
     return program, exists
 
 
-class Python(Task):
+class OpenMC(Task):
     def __init__(self, app, conf):
         super().__init__(app, conf.build_dir)
         self.app = app
@@ -262,7 +235,8 @@ class Python(Task):
         self.conf = conf
         self.logger = app.logger
         self.program = None
-        self.hexversion = None
+        self.version = None
+        self.commit_hash = None
 
     def patch(self, filename):
         if not filename:
@@ -275,75 +249,50 @@ class Python(Task):
                      stdin_filename=filename)
 
     def compile(self):
-        build_dir = self.conf.build_dir
+        if self.conf.compile:
+            build_dir = self.conf.build_dir
 
-        _utils.safe_rmtree(build_dir)
-        self.app.safe_makedirs(build_dir)
+            _utils.safe_rmtree(build_dir)
+            self.app.safe_makedirs(build_dir)
 
-        config_args = []
-        if self.branch.startswith("2.") and not _utils.MS_WINDOWS:
-            # On Python 2, use UCS-4 for Unicode on all platforms, except
-            # on Windows which uses UTF-16 because of its 16-bit wchar_t
-            config_args.append('--enable-unicode=ucs4')
-        if self.conf.prefix:
-            config_args.extend(('--prefix', self.conf.prefix))
-        if self.conf.debug:
-            config_args.append('--with-pydebug')
-        elif self.conf.lto:
-            config_args.append('--with-lto')
-        if self.conf.jit:
-            config_args.append(f'--enable-experimental-jit={self.conf.jit}')
-        if self.conf.pkg_only:
-            config_args.extend(self.get_package_only_flags())
-        if self.conf.debug:
-            config_args.append('CFLAGS=-O0')
-        configure = os.path.join(self.conf.repo_dir, 'configure')
-        self.run(configure, *config_args)
+            config_args = ['-B', build_dir]
+            # TODO-SK add cmake options for other build types, and update config options
+            configure = 'cmake'
+            # Assumes CMakeLists.txt file is one level above the build directory
+            config_args.append(os.path.join(build_dir, '..'))
+            self.run(configure, *config_args)
 
-        argv = ['make']
-        if self.conf.pgo:
-            # FIXME: use taskset (isolated CPUs) for PGO?
-            argv.append('profile-opt')
-        if self.conf.jobs:
-            argv.append('-j%d' % self.conf.jobs)
-        self.run(*argv)
+            argv = ['make', '-C', build_dir]
+            if self.conf.jobs:
+                argv.append('-j%d' % self.conf.jobs)
+            self.run(*argv)
 
-    def install_python(self):
-        program, _ = resolve_python(
-            self.conf.prefix if self.conf.install else None,
-            self.conf.build_dir,
-        )
+    def install_openmc(self):
         if self.conf.install:
-            program, _ = resolve_python(self.conf.prefix, self.conf.build_dir)
+            program, _ = resolve_openmc(self.conf.prefix, self.conf.build_dir)
             _utils.safe_rmtree(self.conf.prefix)
             self.app.safe_makedirs(self.conf.prefix)
             self.run('make', 'install')
         else:
-            program, _ = resolve_python(None, self.conf.build_dir)
-        # else don't install: run python from the compilation directory
+            program, _ = resolve_openmc(self.conf.build_dir, self.conf.build_dir)
+        # else don't install: run openmc from the compilation directory
         self.program = program
 
     def get_version(self):
-        # Dump the Python version
-        self.logger.error("Installed Python version:")
+        # Dump the OpenMC version
+        self.logger.error("Installed OpenMC version:")
         self.run(self.program, '--version')
 
-        # Get the Python version
-        code = 'import sys; print(sys.hexversion)'
-        stdout = self.get_output(self.program, '-c', code)
-        self.hexversion = int(stdout)
-        self.logger.error("Python hexversion: %x" % self.hexversion)
+        # Get the OpenMC version
+        stdout = self.get_output(self.program, '--version')
+        stdout_split = stdout.split('\n')
+        self.version = stdout_split[0].split()[2]
+        self.commit_hash = stdout_split[1].split()[2]
+        self.logger.error("OpenMC version: %s, commit hash: %s" % (self.version, self.commit_hash))
 
     def get_package_only_flags(self):
         arguments = []
         extra_paths = []
-
-        for pkg in self.conf.pkg_only:
-            prefix = self.get_package_prefix(pkg)
-            if pkg == 'openssl':
-                arguments.append('--with-openssl=' + prefix)
-            else:
-                extra_paths.append(prefix)
 
         if extra_paths:
             # Flags are one CLI arg each and do not need quotes.
@@ -369,33 +318,6 @@ class Python(Task):
         self.logger.error("Download %s into %s" % (url, filename))
         _utils.download(url, filename)
 
-    def _install_pip(self):
-        # On Python: 3.5a0 <= version < 3.5.0 (final), install pip 7.1.2,
-        # the last version working on Python 3.5a0:
-        # https://sourceforge.net/p/pyparsing/bugs/100/
-        assert self.hexversion > 0x3060000, self.hexversion
-
-        # is pip already installed and working?
-        exitcode = self.run_nocheck(self.program, '-u', '-m', 'pip', '--version')
-        if not exitcode:
-            # Upgrade pip
-            self.run(self.program, '-u', '-m', 'pip', 'install', '-U', 'pip')
-            return
-
-        # pip is missing (or broken?): install it
-        filename = os.path.join(self.conf.directory, 'get-pip.py')
-        if not os.path.exists(filename):
-            self.download(_pip.GET_PIP_URL, filename)
-
-        # Install pip
-        self.run(self.program, '-u', filename)
-
-    def install_pip(self):
-        self._install_pip()
-
-        # Dump the pip version
-        self.run(self.program, '-u', '-m', 'pip', '--version')
-
     def install_performance(self):
         cmd = [self.program, '-u', '-m', 'pip', 'install']
 
@@ -409,10 +331,9 @@ class Python(Task):
 
     def compile_install(self):
         self.compile()
-        self.install_python()
+        self.install_openmc()
         self.get_version()
-        self.install_pip()
-        self.install_performance()
+        #self.install_performance()
 
 
 class BenchmarkRevision(Application):
@@ -492,37 +413,43 @@ class BenchmarkRevision(Application):
             self.filename = os.path.join(self.conf.json_dir, filename)
 
     def compile_install(self):
-        self.repository.checkout(self.revision)
+        if self.conf.compile:
+            self.repository.checkout(self.revision)
 
-        # First: remove everything
-        _utils.safe_rmtree(self.conf.build_dir)
-        _utils.safe_rmtree(self.conf.prefix)
+            # First: remove everything
+            _utils.safe_rmtree(self.conf.build_dir)
 
-        self.python.patch(self.patch)
-        self.python.compile_install()
+            self.openmc.patch(self.patch)
+        self.openmc.compile_install()
 
     def create_venv(self):
+        from .run import get_run_id
+        from . import _openmcinfo
         # Create venv
-        python = self.python.program
+        openmc = self.openmc.program
         if self._dryrun:
-            program, exists = resolve_python(
-                self.conf.prefix if self.conf.install else None,
+            program, exists = resolve_openmc(
+                self.conf.build_dir,
                 self.conf.build_dir,
             )
-            if not python or not exists:
-                python = sys.executable
+            if not openmc or not exists:
+                sys.exit(EXIT_VENV_ERROR)
+        python = sys.executable
+        runid = get_run_id(_openmcinfo.get_info(openmc))
+        venv_path = os.path.join(self.conf.venv_dir, runid.name)
         cmd = [python, '-u', '-m', 'pyperformance', 'venv', 'recreate',
-               '--venv', self.conf.venv,
-               '--benchmarks', '<NONE>',
+               '--venv', venv_path,
+               #'--benchmarks', '<NONE>',
+               '-p', openmc
                ]
         if self.options.inherit_environ:
             cmd.append('--inherit-environ=%s' % ','.join(self.options.inherit_environ))
         exitcode = self.run_nocheck(*cmd)
         if exitcode:
             sys.exit(EXIT_VENV_ERROR)
-        binname = 'Scripts' if os.name == 'nt' else 'bin'
+        binname = 'bin'
         base = os.path.basename(python)
-        return os.path.join(self.conf.venv, binname, base)
+        return os.path.join(self.conf.venv_dir, binname, base)
 
     def run_benchmark(self, python=None):
         self.safe_makedirs(os.path.dirname(self.filename))
@@ -543,8 +470,6 @@ class BenchmarkRevision(Application):
             cmd.append('--benchmarks=%s' % self.conf.benchmarks)
         if self.conf.affinity:
             cmd.extend(('--affinity', self.conf.affinity))
-        if self.conf.debug:
-            cmd.append('--debug-single-value')
         if self.conf.same_loops:
             cmd.append('--same_loops=%s' % self.conf.same_loops)
         exitcode = self.run_nocheck(*cmd)
@@ -638,20 +563,6 @@ class BenchmarkRevision(Application):
 
         self.uploaded = True
 
-    def perf_system_tune(self):
-        pythonpath = os.environ.get('PYTHONPATH')
-        args = ['-m', 'pyperf', 'system', 'tune']
-        if self.conf.affinity:
-            args.extend(('--affinity', self.conf.affinity))
-        if pythonpath:
-            cmd = ('PYTHONPATH=%s %s %s'
-                   % (shlex.quote(pythonpath),
-                      shlex.quote(sys.executable),
-                      ' '.join(args)))
-            self.run('sudo', 'bash', '-c', cmd)
-        else:
-            self.run('sudo', sys.executable, *args)
-
     def prepare(self):
         self.logger.error("Compile and benchmarks Python rev %s (branch %s)"
                           % (self.revision, self.branch))
@@ -683,19 +594,12 @@ class BenchmarkRevision(Application):
             self.logger.error("Disable upload on patched Python")
             self.conf.upload = False
 
-        if self.conf.debug and self.conf.upload:
-            self.logger.error("Disable upload in debug mode")
-            self.conf.upload = False
-
         if not self.conf.install and self.conf.upload:
             self.logger.error("Disable upload if Python is not installed")
             self.conf.upload = False
 
-        if self.conf.system_tune:
-            self.perf_system_tune()
-
     def compile_bench(self):
-        self.python = Python(self, self.conf)
+        self.openmc = OpenMC(self, self.conf)
 
         if not self._dryrun:
             try:
@@ -703,11 +607,13 @@ class BenchmarkRevision(Application):
             except SystemExit:
                 sys.exit(EXIT_COMPILE_ERROR)
 
-        if self.conf.venv:
-            python = self.create_venv()
+        if self.conf.venv_dir:
+            venv_path = self.create_venv()
         else:
-            python = None
+            venv_path = None
 
+        return False
+        # TODO-SK handle commands below
         failed = self.run_benchmark(python)
         if self.conf.upload:
             self.upload()
@@ -721,7 +627,9 @@ class BenchmarkRevision(Application):
 
         dt = time.monotonic() - self.start
         dt = datetime.timedelta(seconds=dt)
-        self.logger.error("Benchmark completed in %s" % dt)
+        self.logger.error("Compilation completed in %s" % dt)
+        return
+        # TODO-SK handle commands below, separate timing between setup and benchmark execution
 
         if self.uploaded:
             self.logger.error("Benchmark results uploaded and written into %s"
@@ -791,7 +699,6 @@ def parse_config(filename, command):
     conf.json_dir = getfile('config', 'json_dir')
     conf.json_patch_dir = os.path.join(conf.json_dir, 'patch')
     conf.uploaded_json_dir = os.path.join(conf.json_dir, 'uploaded')
-    conf.debug = getboolean('config', 'debug', False)
 
     if parse_compile:
         # [scm]
@@ -801,11 +708,8 @@ def parse_config(filename, command):
 
         # [compile]
         conf.directory = getfile('compile', 'bench_dir')
-        conf.lto = getboolean('compile', 'lto', True)
-        conf.pgo = getboolean('compile', 'pgo', True)
-        conf.jit = getstr('compile', 'jit', '')
-        conf.install = getboolean('compile', 'install', True)
-        conf.pkg_only = getstr('compile', 'pkg_only', '').split()
+        conf.install = getboolean('compile', 'install', False)
+        conf.compile = getboolean('compile', 'compile', True)
         try:
             conf.jobs = getint('compile', 'jobs')
         except KeyError:
@@ -820,9 +724,10 @@ def parse_config(filename, command):
         conf.same_loops = getfile('run_benchmark', 'same_loops', default='')
 
         # paths
-        conf.build_dir = os.path.join(conf.directory, 'build')
-        conf.prefix = os.path.join(conf.directory, 'prefix')
-        conf.venv = os.path.join(conf.directory, 'venv')
+        conf.build_dir = os.path.join(conf.repo_dir, 'build')
+        conf.log_dir = os.path.join(conf.directory, 'logs')
+        conf.bench_dir = os.path.join(conf.directory, 'bench_dir')
+        conf.venv_dir = os.path.join(conf.directory, 'venv')
 
         check_upload = conf.upload
     else:
@@ -863,11 +768,6 @@ def parse_config(filename, command):
                 # strip spaces
                 name = name.strip()
                 conf.revisions.append((revision, name))
-
-    # process config
-    if conf.debug:
-        conf.pgo = False
-        conf.lto = False
 
     return conf
 

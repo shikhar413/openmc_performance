@@ -197,8 +197,7 @@ def parse_args():
                                "environment when running benchmarking "
                                "subprocesses."))
         cmd.add_argument("-p", "--openmc",
-                         help="OpenMC executable (default: use running Python)",
-                         default='openmc')
+                         help="OpenMC executable")
 
     options = parser.parse_args()
 
@@ -210,15 +209,19 @@ def parse_args():
         parser.print_help()
         sys.exit(1)
 
-    if hasattr(options, 'openmc'):
-        # Replace "~" with the user home directory
-        options.openmc = os.path.expanduser(options.openmc)
-        # Try to get the absolute path to the binary
-        abs_openmc = os.path.abspath(options.openmc)
-        if not os.path.exists(abs_openmc):
-            print("ERROR: Unable to locate the OpenMC executable: {}. Please set correct path using -p flag".format(abs_openmc), flush=True)
+    if options.action == 'venv':
+        if hasattr(options, 'openmc'):
+            # Replace "~" with the user home directory
+            options.openmc = os.path.expanduser(options.openmc)
+            # Try to get the absolute path to the binary
+            abs_openmc = os.path.abspath(options.openmc)
+            if not os.path.exists(abs_openmc):
+                print("ERROR: Unable to locate the OpenMC executable: {}. Please set correct path using -p flag".format(abs_openmc), flush=True)
+                sys.exit(1)
+            options.openmc = abs_openmc
+        else:
+            print("ERROR: Path to OpenMC executable was not specified. Please set correct path using -p flag", flush=True)
             sys.exit(1)
-        options.openmc = abs_openmc
 
     if hasattr(options, 'benchmarks'):
         if options.benchmarks == '<NONE>':
