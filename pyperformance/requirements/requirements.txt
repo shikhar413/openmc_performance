@@ -6,9 +6,3 @@
 #
 packaging==23.1
     # via -r requirements.in
-psutil==5.9.5
-    # via
-    #   -r requirements.in
-    #   pyperf
-pyperf==2.8.0
-    # via -r requirements.in
