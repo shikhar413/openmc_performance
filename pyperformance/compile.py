@@ -97,6 +97,9 @@ class Repository(Task):
         # remove all untracked files
         self.run('git', 'clean', '-fdx')
 
+        # update submodules if necessary
+        self.run('git', 'submodule', 'update', '--init')
+
     def get_revision_info(self, revision):
         cmd = ['git', 'show', '-s', '--pretty=format:%H|%ci', '%s^!' % revision]
         stdout = self.get_output(*cmd)
@@ -318,22 +321,10 @@ class OpenMC(Task):
         self.logger.error("Download %s into %s" % (url, filename))
         _utils.download(url, filename)
 
-    def install_performance(self):
-        cmd = [self.program, '-u', '-m', 'pip', 'install']
-
-        if pyperformance.is_dev():
-            cmd.extend(['-e', os.path.dirname(pyperformance.PKG_ROOT)])
-        else:
-            version = pyperformance.__version__
-            cmd.append('pyperformance==%s' % version)
-
-        self.run(*cmd)
-
     def compile_install(self):
         self.compile()
         self.install_openmc()
         self.get_version()
-        #self.install_performance()
 
 
 class BenchmarkRevision(Application):

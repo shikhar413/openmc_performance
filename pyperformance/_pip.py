@@ -139,6 +139,21 @@ def ensure_installer(python=sys.executable, **kwargs):
     return install_requirements(*reqs, python=python, **kwargs)
 
 
+def install_requirements(reqs, *extra,
+                         upgrade=True,
+                         **kwargs
+                         ):
+    """Install the given packages from PyPI."""
+    args = []
+    if upgrade:
+        args.append('-U')  # --upgrade
+    for reqs in [reqs, *extra]:
+        if os.path.isfile(reqs) and reqs.endswith('.txt'):
+            args.append('-r')  # --requirement
+        args.append(reqs)
+    return run_pip('install', *args, **kwargs)
+
+
 def install_openmc_requirements(openmc, *extra,
                                 upgrade=True,
                                 **kwargs
@@ -155,6 +170,6 @@ def install_openmc_requirements(openmc, *extra,
     return run_pip('install', *args, **kwargs)
 
 
-def install_editable(projectroot, **kwargs):
+def install_pyperformance(projectroot, **kwargs):
     """Install the given project as an "editable" install."""
-    return run_pip('install', '-e', projectroot, **kwargs)
+    return run_pip('install', projectroot, **kwargs)

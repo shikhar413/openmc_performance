@@ -240,8 +240,6 @@ def _manifest_from_options(options):
 def _benchmarks_from_options(options):
     if not getattr(options, 'benchmarks', None):
         return None
-    return None
-    # TODO-SK handle code below
     manifest = _manifest_from_options(options)
     return _select_benchmarks(options.benchmarks, manifest)
 
@@ -266,14 +264,11 @@ def _select_benchmarks(raw, manifest):
 
     # Get the selections.
     selected = []
-    this_openmc_version = ".".join(map(str, sys.version_info[:3]))
     for bench in _benchmark_selections.iter_selections(manifest, parsed_infos):
         if isinstance(bench, str):
             logging.warning(f"no benchmark named {bench!r}")
             continue
-        # Filter out any benchmarks that can't be run on the Python version we're running
-        if this_openmc_version in bench.openmc:
-            selected.append(bench)
+        selected.append(bench)
 
     return selected
 

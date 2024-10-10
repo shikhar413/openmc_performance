@@ -12,8 +12,7 @@ import os
 import os.path
 import sys
 
-import pyperf
-from packaging.specifiers import SpecifierSet
+#from packaging.specifiers import SpecifierSet
 
 from . import _utils, _benchmark_metadata
 

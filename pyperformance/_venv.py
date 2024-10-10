@@ -149,10 +149,9 @@ class VirtualEnvironment:
         if not info:
             info = _openmcinfo.get_info(openmc)
         venv_python = os.path.join(root, 'bin', 'python')
-        _pip.install_openmc_requirements(openmc, upgrade=False, python=venv_python)
-        self = cls(root, base=info)
-        self._openmc = openmc
-        self._python = venv_python
+        self = cls(root, base=info, openmc=openmc, python=venv_python)
+        self.ensure_pip()
+        self.ensure_python_openmc()
         return self
 
     @classmethod
@@ -162,11 +161,12 @@ class VirtualEnvironment:
         else:
             return cls.create(root, python, **kwargs)
 
-    def __init__(self, root, *, base=None):
-        assert os.path.exists(resolve_venv_openmc(root)), root
+    def __init__(self, root, openmc=None, python=None, *, base=None):
         self.root = root
         if base:
             self._base = base
+        self._openmc = openmc
+        self._python = python
 
     @property
     def openmc(self):
@@ -200,6 +200,10 @@ class VirtualEnvironment:
                 base_exe = ...
             self._base = _openmcinfo.get_info(base_exe)
             return self._base
+
+    def ensure_python_openmc(self):
+        _pip.install_openmc_requirements(self._openmc, upgrade=True, python=self._python)
+        assert os.path.exists(resolve_venv_openmc(self.root)), self.root
 
     def ensure_pip(self, downloaddir=None, *, installer=True, upgrade=True):
         if not upgrade and _pip.is_pip_installed(self.python, env=self._env):

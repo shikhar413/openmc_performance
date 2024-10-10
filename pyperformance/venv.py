@@ -182,8 +182,8 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
                 **kwargs
             )
 
-    def __init__(self, root, *, base=None, inherit_environ=None):
-        super().__init__(root, base=base)
+    def __init__(self, root, openmc=None, python=None, *, base=None, inherit_environ=None):
+        super().__init__(root, openmc=openmc, python=python, base=base)
         self.inherit_environ = inherit_environ or None
 
     @property
@@ -197,29 +197,18 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
         if pyperformance.is_dev():
             basereqs = Requirements.from_file(REQUIREMENTS_FILE)
             self.ensure_reqs(basereqs)
-            if basereqs.get('pyperf'):
-                self._install_pyperf_optional_dependencies()
 
             root_dir = os.path.dirname(pyperformance.PKG_ROOT)
-            ec, _, _ = _pip.install_editable(
+            ec, _, _ = _pip.install_pyperformance(
                 root_dir,
-                python=self.info,
+                python=self.python,
                 env=self._env,
             )
             if ec != 0:
-                raise RequirementsInstallationFailedError(root_dir)
+                raise RequirementsInstallationFailedError
         else:
-            version = pyperformance.__version__
-            self.ensure_reqs([f'pyperformance=={version}'])
-            self._install_pyperf_optional_dependencies()
-
-    def _install_pyperf_optional_dependencies(self):
-        for req in PYPERF_OPTIONAL:
-            try:
-                self.ensure_reqs([req])
-            except _venv.RequirementsInstallationFailedError:
-                print("WARNING: failed to install %s" % req)
-                pass
+            print("Only dev installation of pyperformance is supported at this time")
+            raise RequirementsInstallationFailedError('pyperformance')
 
     def ensure_reqs(self, requirements=None):
         # parse requirements
@@ -230,15 +219,6 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
             bench = requirements
             requirements = Requirements.from_benchmarks([bench])
 
-        # Every benchmark must depend on pyperf.
-        if bench is not None and not requirements.get('pyperf'):
-            basereqs = Requirements.from_file(REQUIREMENTS_FILE)
-            pyperf_req = basereqs.get('pyperf')
-            if not pyperf_req:
-                raise NotImplementedError
-            requirements.specs.append(pyperf_req)
-            # XXX what about psutil?
-
         if not requirements:
             print('(nothing to install)')
         else:
@@ -247,9 +227,6 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
                 *requirements,
                 upgrade=False,
             )
-
-            if bench is not None:
-                self._install_pyperf_optional_dependencies()
 
         # Dump the package list and their versions: pip freeze
         _pip.run_pip('freeze', python=self.python, env=self._env)

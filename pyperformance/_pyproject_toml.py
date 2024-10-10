@@ -15,9 +15,7 @@ import re
 import urllib.parse
 
 import packaging.requirements
-import packaging.specifiers
 import packaging.utils
-import packaging.version
 
 try:
     import tomllib  # type: ignore[import] # tomllib doesn't exist on 3.7-3.10
@@ -149,124 +147,16 @@ def _normalize_project(data, rootdir, name, requirefiles, **_ignored):
         if 'name' not in data.get('dynamic', []):
             raise ValueError('missing required "name" field')
 
-    try:
-        version = data['version']
-    except KeyError:
-        if 'version' not in data.get('dynamic', []):
-            raise ValueError('missing required "version" field')
-    else:
-        # We keep the full version string rather than
-        # the canonicalized form.  However, we still validate and
-        # (effectively) normalize it.
-        version = packaging.version.parse(version)
-        data['version'] = str(version)
-        unused.remove('version')
-
     ##########
     # Now we handle the optional fields.
 
     # We leave "description" as-is.
-
-    key = 'readme'
-    if key in data:
-        readme = data[key]
-        if isinstance(readme, 'str'):
-            readme = data[key] = {'file': readme}
-        # XXX Check the suffix.
-        # XXX Handle 'content-type'.
-        # XXX Handle "charset" parameter.
-        _check_file_or_text(data[key], rootdir, requirefiles,
-                            ['content-type', 'charset'])
-        unused.remove(key)
-
-    key = 'requires-python'
-    if key in data:
-        # We keep it as a string.
-        data[key] = str(packaging.specifiers.SpecifierSet(data[key]))
-        unused.remove(key)
-
-    key = 'license'
-    if key in data:
-        _check_file_or_text(data[key], rootdir, requirefiles)
-        unused.remove(key)
-
-    key = 'keywords'
-    if key in data:
-        for keyword in data[key]:
-            # XXX Is this the right check?
-            check_name(name, loose=True)
-        unused.remove(key)
-
-    key = 'authors'
-    if key in data:
-        for person in data[key]:
-            # We only make sure it is valid.
-            parse_person(person)
-        unused.remove(key)
-
-    key = 'maintainers'
-    if key in data:
-        for person in data[key]:
-            # We only make sure it is valid.
-            parse_person(person)
-        unused.remove(key)
-
-    key = 'classifiers'
-    if key in data:
-        for classifier in data[key]:
-            # We only make sure it is valid.
-            parse_classifier(classifier)
-        unused.remove(key)
 
     key = 'dependencies'
     if key in data:
         for dep in data[key]:
             # We only make sure it is valid.
             packaging.requirements.Requirement(dep)
-        unused.remove(key)
-
-    key = 'optional-dependencies'
-    if key in data:
-        # XXX
-        unused.remove(key)
-
-    key = 'urls'
-    if key in data:
-        for name, url in data[key].items():
-            # XXX Is there a stricter check?
-            check_name(name, loose=True)
-            # We only make sure it is valid.
-            urllib.parse.urlparse(url)
-        unused.remove(key)
-
-    key = 'scripts'
-    if key in data:
-        for name, value in data[key].items():
-            # XXX Is there a stricter check?
-            check_name(name, loose=True)
-            # We only make sure it is valid.
-            parse_entry_point(value)
-        unused.remove(key)
-
-    key = 'gui-scripts'
-    if key in data:
-        for _, value in data[key].items():
-            # XXX Is there a stricter check?
-            check_name(name, loose=True)
-            # We only make sure it is valid.
-            parse_entry_point(value)
-        unused.remove(key)
-
-    key = 'entry-points'
-    if key in data:
-        for groupname, group in data[key].items():
-            # XXX Is there a stricter check?
-            check_name(groupname, loose=True)
-            for epname, value in group.items():
-                # XXX Is there a stricter check?
-                check_name(epname, loose=True)
-                # We only make sure it is valid.
-                parse_entry_point(value)
         unused.remove(key)
 
     key = 'dynamic'
