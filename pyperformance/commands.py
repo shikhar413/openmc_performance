@@ -138,8 +138,8 @@ def cmd_venv_show(options, root):
 
 
 def cmd_run(options, benchmarks):
-    import pyperf
     import pyperformance
+    import json
     from .compare import display_benchmark_suite
     from .run import run_benchmarks
 
@@ -152,12 +152,13 @@ def cmd_run(options, benchmarks):
         print("ERROR: the output file %s already exists!" % options.output)
         sys.exit(1)
 
-    if hasattr(options, 'python'):
-        executable = options.python
+    if options.openmc:
+        executable = options.openmc
+        if not os.path.isabs(executable):
+            print("ERROR: \"%s\" is not an absolute path" % executable)
+            sys.exit(1)
     else:
-        executable = sys.executable
-    if not os.path.isabs(executable):
-        print("ERROR: \"%s\" is not an absolute path" % executable)
+        print("ERROR: openmc executable needs to be passed in through the -p flag")
         sys.exit(1)
 
     suite, errors = run_benchmarks(benchmarks, executable, options)
@@ -167,10 +168,16 @@ def cmd_run(options, benchmarks):
         sys.exit(1)
 
     if options.output:
-        suite.dump(options.output)
-    if options.append:
-        pyperf.add_runs(options.append, suite)
-    display_benchmark_suite(suite)
+        abs_path = os.path.abspath(options.output)
+        if os.path.isdir(abs_path):
+            print("ERROR: output filename cannot point to a directory")
+        if not os.path.exists(os.path.dirname(abs_path)):
+            os.makedirs(os.path.dirname(abs_path))
+        suite_data = [s.data for s in suite]
+        with open(abs_path, 'w') as f:
+            f.write(json.dumps(suite_data, indent=4, default=str))
+            f.write('\n')
+    display_benchmark_suite(suite, title="Benchmark results summary")
 
     if errors:
         print("%s benchmarks failed:" % len(errors))

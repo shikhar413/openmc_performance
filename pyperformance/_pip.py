@@ -25,7 +25,7 @@ def get_pkg_name(req):
 def get_best_pip_version(python):
     """Return the pip to install for the given Python executable."""
     if not python or isinstance(python, str):
-        info = _openmcinfo.get_info(python)
+        info, _ = _openmcinfo.get_version_info(python)
     else:
         info = python
     # On Python: 3.5a0 <= version < 3.5.0 (final), install pip 7.1.2,
@@ -51,6 +51,13 @@ def is_pip_installed(python, *, env=None):
         capture=True,
         verbose=False,
     )
+    return ec == 0
+
+
+def is_package_installed(package, *, python=None, env=None):
+    """Return True if pip is installed on the given Python executable."""
+    # Assumes that a installed package has a -h flag
+    ec, _, _ = _utils.run_python('-m', package, '-h', python=python, env=env, capture='both')
     return ec == 0
 
 

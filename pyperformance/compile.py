@@ -21,6 +21,7 @@ from pyperformance import _utils, _pip
 
 
 DEFAULT_BRANCH = 'develop'
+DEFAULT_PROJECT = 'OpenMC'
 LOG_FORMAT = '%(asctime)-15s: %(message)s'
 
 EXIT_ALREADY_EXIST = 10
@@ -426,7 +427,7 @@ class BenchmarkRevision(Application):
             if not openmc or not exists:
                 sys.exit(EXIT_VENV_ERROR)
         python = sys.executable
-        runid = get_run_id(_openmcinfo.get_info(openmc))
+        runid = get_run_id(_openmcinfo.get_version_info(openmc)[0])
         venv_path = os.path.join(self.conf.venv_dir, runid.name)
         cmd = [python, '-u', '-m', 'pyperformance', 'venv', 'recreate',
                '--venv', venv_path,

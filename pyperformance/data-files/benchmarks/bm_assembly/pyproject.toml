@@ -1,0 +1,2 @@
+[tool.pyperformance]
+name = "2to3"

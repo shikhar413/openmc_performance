@@ -3,6 +3,10 @@
 *.pyo
 *.pyd
 
+# OpenMC output files
+*.h5
+*.xml
+
 # Temporary files, usually created by text editors (vim)
 *.swp
 *~

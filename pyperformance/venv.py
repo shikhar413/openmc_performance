@@ -159,14 +159,16 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
                ):
         exists = _venv.venv_exists(root)
         if upgrade == 'oncreate':
+            # Upgrade only when venv created from scratch
             upgrade = not exists
         elif upgrade == 'onexists':
+            # Upgrade only when venv exists
             upgrade = exists
         elif isinstance(upgrade, str):
             raise NotImplementedError(upgrade)
 
         if exists:
-            self = super().ensure(root)
+            self = super().ensure(root, openmc)
             self.inherit_environ = inherit_environ
             if upgrade:
                 self.upgrade_pip()
@@ -191,8 +193,12 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
         # Restrict the env we use.
         return _get_envvars(self.inherit_environ)
 
-    def install_pyperformance(self):
+    def ensure_pyperformance(self, upgrade=False):
+        if not upgrade and _pip.is_package_installed("pyperformance", python=self.python, env=self._env):
+            print("Skipping pyperformance installation as it already exists in venv")
+            return
         print("installing pyperformance in the venv at %s" % self.root)
+        sys.exit()
         # Install pyperformance inside the virtual environment.
         if pyperformance.is_dev():
             basereqs = Requirements.from_file(REQUIREMENTS_FILE)
@@ -205,10 +211,10 @@ class VenvForBenchmarks(_venv.VirtualEnvironment):
                 env=self._env,
             )
             if ec != 0:
-                raise RequirementsInstallationFailedError
+                raise _venv.RequirementsInstallationFailedError(root_dir)
         else:
             print("Only dev installation of pyperformance is supported at this time")
-            raise RequirementsInstallationFailedError('pyperformance')
+            raise _venv.RequirementsInstallationFailedError('pyperformance')
 
     def ensure_reqs(self, requirements=None):
         # parse requirements

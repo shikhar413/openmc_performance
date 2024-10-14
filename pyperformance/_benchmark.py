@@ -11,6 +11,7 @@ from collections import namedtuple
 import os
 import os.path
 import sys
+import warnings
 
 #from packaging.specifiers import SpecifierSet
 
@@ -173,18 +174,26 @@ class Benchmark:
     # * dependencies
     # * requirements
 
-    def run(self, python, runid=None, pyperf_opts=None, *,
+    def run(self, python, openmc, runid=None, pyperf_opts=None, *,
             venv=None,
             verbose=False,
+            timeout=None,
+            n_trials=None,
+            project=None,
+            branch=None
             ):
         if venv and python == sys.executable:
             python = venv.python
 
+        from . import _openmcinfo
         if not runid:
             from .run import get_run_id
-            runid = get_run_id(python, self)
+            runid = get_run_id(_openmcinfo.get_version_info(openmc)[0], self)
 
+        # Defaults to run_benchmark.py in benchmark folder
         runscript = self.runscript
+        openmcinfo = _openmcinfo.get_build_info(openmc)
+        envinfo = _openmcinfo.get_environment_info()
         bench = _run_perf_script(
             python,
             runscript,
@@ -192,7 +201,11 @@ class Benchmark:
             extra_opts=self.extra_opts,
             pyperf_opts=pyperf_opts,
             verbose=verbose,
+            timeout=timeout,
+            n_trials=n_trials,
+            name=self.name
         )
+        bench.add_executable_info(openmcinfo, envinfo, branch, project)
 
         return bench
 
@@ -201,43 +214,63 @@ class Benchmark:
 # internal implementation
 
 def _run_perf_script(python, runscript, runid, *,
-                    extra_opts=None,
-                    pyperf_opts=None,
-                    verbose=False,
+                     extra_opts=None,
+                     pyperf_opts=None,
+                     verbose=False,
+                     timeout=None,
+                     n_trials=None,
+                     name=None
                     ):
+    from ._benchmarkresult import BenchmarkResult
     if not runscript:
         raise ValueError('missing runscript')
     if not isinstance(runscript, str):
         raise TypeError(f'runscript must be a string, got {runscript!r}')
+    if not timeout:
+        warnings.warn('No timeout value will be passed to benchmark run scripts')
+    if not n_trials:
+        raise ValueError('missing n_trials')
 
-    with _utils.temporary_file() as tmp:
-        opts = [
-            *(extra_opts or ()),
-            *(pyperf_opts or ()),
-            '--output', tmp,
-        ]
-        if pyperf_opts and '--copy-env' in pyperf_opts:
-            argv, env = _prep_cmd(python, runscript, opts, runid, NOOP)
-        else:
-            opts, inherit_envvar = _resolve_restricted_opts(opts)
-            argv, env = _prep_cmd(python, runscript, opts, runid, inherit_envvar)
-        hide_stderr = not verbose
-        ec, _, stderr = _utils.run_cmd(
+    # TODO-SK do we need to define opts?
+    opts = [
+        *(extra_opts or ()),
+        *(pyperf_opts or ()),
+    ]
+    opts, inherit_envvar = _resolve_restricted_opts(opts)
+    opts = ['--run']
+    argv, env = _prep_cmd(python, runscript, opts, runid, inherit_envvar)
+    timing_results = []
+    for n in range(n_trials):
+        ec, stdout, stderr = _utils.run_cmd(
             argv,
             env=env,
-            capture='stderr' if hide_stderr else None,
+            capture='both',
+            timeout=timeout
         )
         if ec != 0:
-            if hide_stderr:
-                sys.stderr.flush()
-                sys.stderr.write(stderr)
-                sys.stderr.flush()
-            # pyperf returns exit code 124 if the benchmark execution times out
-            if ec == 124:
-                raise TimeoutError("Benchmark timed out")
-            else:
-                raise RuntimeError("Benchmark died")
-        return pyperf.BenchmarkSuite.load(tmp)
+            sys.stderr.flush()
+            sys.stderr.write(stderr)
+            sys.stderr.flush()
+            raise RuntimeError("Benchmark died")
+        sys.stdout.flush()
+        if verbose:
+            sys.stdout.write(stdout)
+            sys.stderr.flush()
+        runtime = _get_openmc_timing(stdout)
+        if not runtime:
+            raise RuntimeError("Timing results not found in openmc output")
+        print('***Trial {} took {} seconds***'.format(n+1, runtime))
+        print()
+        timing_results.append(runtime)
+    return BenchmarkResult(timing_results, name)
+
+
+def _get_openmc_timing(openmc_output):
+    found_timing = False
+    for line in openmc_output.split('\n'):
+        if 'Total time elapsed' in line:
+            return float(line.split()[4])
+    return None
 
 
 def _prep_cmd(python, script, opts, runid, on_set_envvar=None):

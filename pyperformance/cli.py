@@ -18,6 +18,7 @@ from pyperformance.commands import (
     cmd_show,
     cmd_compare,
 )
+from pyperformance.compile import DEFAULT_BRANCH, DEFAULT_PROJECT
 
 
 def comma_separated(values):
@@ -25,10 +26,23 @@ def comma_separated(values):
     return list(filter(None, values))
 
 
+def check_positive_int(value):
+    try:
+        value = int(value)
+        if value <= 0:
+            raise argparse.ArgumentTypeError("Argument must a be positive integer.")
+    except ValueError:
+        raise argparse.ArgumentTypeError("{} is not an integer".format(value))
+    return value
+
+
 def check_positive(value):
-    value = int(value)
-    if value <= 0:
-        raise argparse.ArgumentTypeError("Argument must a be positive integer.")
+    try:
+        value = float(value)
+        if value <= 0:
+            raise argparse.ArgumentTypeError("Argument must a be positive number.")
+    except ValueError:
+        raise argparse.ArgumentTypeError("{} is not a number".format(value))
     return value
 
 
@@ -60,13 +74,6 @@ def parse_args():
     cmd = subparsers.add_parser(
         'run', help='Run benchmarks on the running OpenMC')
     cmds.append(cmd)
-    cmd.add_argument("-r", "--rigorous", action="store_true",
-                     help=("Spend longer running tests to get more"
-                           " accurate results"))
-    cmd.add_argument("-f", "--fast", action="store_true",
-                     help="Get rough answers quickly")
-    cmd.add_argument("--debug-single-value", action="store_true",
-                     help="Debug: fastest mode, only compute a single value")
     cmd.add_argument("-v", "--verbose", action="store_true",
                      help="Print more output")
     cmd.add_argument("-m", "--track-memory", action="store_true",
@@ -78,21 +85,19 @@ def parse_args():
     cmd.add_argument("-o", "--output", metavar="FILENAME",
                      help="Run the benchmarks on only one interpreter and "
                            "write benchmark into FILENAME. "
-                           "Provide only baseline_openmc, not changed_openmc.")
-    cmd.add_argument("--append", metavar="FILENAME",
-                     help="Add runs to an existing file, or create it "
-                     "if it doesn't exist")
-    cmd.add_argument("--min-time", metavar="MIN_TIME",
-                     help="Minimum duration in seconds of a single "
-                     "value, used to calibrate the number of loops")
-    cmd.add_argument("--same-loops",
-                     help="Use the same number of loops as a previous run "
-                     "(i.e., don't recalibrate). Should be a path to a "
-                     ".json file from a previous run.")
+                           "Provide only baseline_python, not changed_python.")
     cmd.add_argument("--timeout",
-                     help="Specify a timeout in seconds for a single "
-                     "benchmark run (default: disabled)",
+                     help="Specify a timeout in seconds for each "
+                     "benchmark run execution (default: 1 hour)", default=3600,
                      type=check_positive)
+    cmd.add_argument("--venv", help="Path to the virtual environment to use")
+    cmd.add_argument("--n-trials", default=5, type=check_positive_int,
+                     help=("Number of trials to conduct for timing "
+                           "statistics for each benchmark (default: 5)"))
+    cmd.add_argument("--project", default=DEFAULT_PROJECT,
+                     help=("Name of project for benchmarking results (default: {})".format(DEFAULT_PROJECT)))
+    cmd.add_argument("--branch", default=DEFAULT_BRANCH,
+                     help=("Name of branch for benchmarking results (default: {})".format(DEFAULT_BRANCH)))
     filter_opts(cmd)
 
     # show
@@ -201,9 +206,6 @@ def parse_args():
 
     options = parser.parse_args()
 
-    if options.action == 'run' and options.debug_single_value:
-        options.fast = True
-
     if not options.action:
         # an action is mandatory
         parser.print_help()
@@ -290,7 +292,7 @@ def _main():
             sys.exit(1)
 
         if not options.venv:
-            info = _openmcinfo.get_info(options.openmc)
+            info, _ = _openmcinfo.get_version_info(options.openmc)
             root = _venv.get_venv_root(openmc=info)
         else:
             root = options.venv

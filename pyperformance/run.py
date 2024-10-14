@@ -4,10 +4,11 @@ import json
 import sys
 import time
 import traceback
+from subprocess import TimeoutExpired
 
 import pyperformance
 from . import _utils, _openmc, _openmcinfo
-from .venv import VenvForBenchmarks, REQUIREMENTS_FILE
+from .venv import Requirements, VenvForBenchmarks, REQUIREMENTS_FILE
 from . import _venv
 
 
@@ -51,41 +52,25 @@ def get_run_id(openmc, bench=None):
     return RunID(openmc_id, compat_id, bench, ts)
 
 
-def get_loops_from_file(filename):
-    with open(filename) as fd:
-        data = json.load(fd)
-
-    loops = {}
-    for benchmark in data["benchmarks"]:
-        metadata = benchmark.get("metadata", data["metadata"])
-        name = metadata["name"]
-        if name.endswith("_none"):
-            name = name[:-len("_none")]
-        if "loops" in metadata:
-            loops[name] = metadata["loops"]
-
-    return loops
-
-
-def run_benchmarks(should_run, python, options):
-    if options.same_loops is not None:
-        loops = get_loops_from_file(options.same_loops)
-    else:
-        loops = {}
-
+def run_benchmarks(should_run, openmc, options):
     to_run = sorted(should_run)
 
-    info = _openmcinfo.get_info(python)
+    info, _ = _openmcinfo.get_version_info(openmc)
     runid = get_run_id(info)
 
-    unique = getattr(options, 'unique_venvs', False)
-    if not unique:
-        common = VenvForBenchmarks.ensure(
-            _venv.get_venv_root(runid.name, python=info),
-            info,
-            upgrade='oncreate',
-            inherit_environ=options.inherit_environ,
-        )
+    root_dir = options.venv if options.venv else _venv.get_venv_root(openmc=info)
+    requirements = Requirements.from_benchmarks(should_run)
+    common = VenvForBenchmarks.ensure(
+        root_dir,
+        openmc,
+        upgrade='oncreate',
+        inherit_environ=options.inherit_environ,
+    )
+    try:
+        common.ensure_pyperformance()
+        common.ensure_reqs(requirements)
+    except _venv.RequirementsInstallationFailedError:
+        sys.exit(1)
 
     benchmarks = {}
     venvs = set()
@@ -93,73 +78,30 @@ def run_benchmarks(should_run, python, options):
         bench_runid = runid._replace(bench=bench)
         assert bench_runid.name, (bench, bench_runid)
         name = bench_runid.name
-        venv_root = _venv.get_venv_root(name, python=info)
         print()
         print('='*50)
-        print(f'({i+1:>2}/{len(to_run)}) creating venv for benchmark ({bench.name})')
-        print()
-        if not unique:
-            print('(trying common venv first)')
-            # Try the common venv first.
-            try:
-                common.ensure_reqs(bench)
-            except _venv.RequirementsInstallationFailedError:
-                print('(falling back to unique venv)')
-            else:
-                benchmarks[bench] = (common, bench_runid)
-                continue
+        print(f'(checking common venv has dependencies for benchmark {bench.name})')
+        # Check that common venv has dependencies for bench.
         try:
-            venv = VenvForBenchmarks.ensure(
-                venv_root,
-                info,
-                upgrade='oncreate',
-                inherit_environ=options.inherit_environ,
-            )
-            # XXX Do not override when there is a requirements collision.
-            venv.ensure_reqs(bench)
+            common.ensure_reqs(bench)
         except _venv.RequirementsInstallationFailedError:
-            print('(benchmark will be skipped)')
-            print()
-            venv = None
-        venvs.add(venv_root)
-        benchmarks[bench] = (venv, bench_runid)
+            print(f'common venv is missing requirements for benchmark {bench.name}')
+            benchmarks[bench] = (None, bench_runid)
+        else:
+            benchmarks[bench] = (common, bench_runid)
     print()
 
-    suite = None
+    suite = []
     run_count = str(len(to_run))
     errors = []
 
     pyperf_opts = get_pyperf_opts(options)
 
-    import pyperf
     for index, bench in enumerate(to_run):
         name = bench.name
         print("[%s/%s] %s..." %
               (str(index + 1).rjust(len(run_count)), run_count, name))
         sys.stdout.flush()
-
-        def add_bench(dest_suite, obj):
-            if isinstance(obj, pyperf.BenchmarkSuite):
-                results = obj
-            else:
-                results = (obj,)
-
-            version = pyperformance.__version__
-            for res in results:
-                res.update_metadata({
-                    'performance_version': version,
-                    'tags': bench.tags
-                })
-
-                if dest_suite is not None:
-                    dest_suite.add_benchmark(res)
-                else:
-                    dest_suite = pyperf.BenchmarkSuite([res])
-
-            return dest_suite
-
-        if name in loops:
-            pyperf_opts.append(f"--loops={loops[name]}")
 
         bench_venv, bench_runid = benchmarks.get(bench)
         if bench_venv is None:
@@ -169,13 +111,19 @@ def run_benchmarks(should_run, python, options):
         try:
             result = bench.run(
                 bench_venv.python,
+                openmc,
                 bench_runid,
                 pyperf_opts,
                 venv=bench_venv,
                 verbose=options.verbose,
+                timeout=options.timeout,
+                n_trials=options.n_trials,
+                branch=options.branch,
+                project=options.project
             )
-        except TimeoutError as exc:
+        except TimeoutExpired as exc:
             print("ERROR: Benchmark %s timed out" % name)
+            traceback.print_exc()
             errors.append((name, exc))
         except RuntimeError as exc:
             print("ERROR: Benchmark %s failed: %s" % (name, exc))
@@ -186,7 +134,7 @@ def run_benchmarks(should_run, python, options):
             traceback.print_exc()
             errors.append((name, exc))
         else:
-            suite = add_bench(suite, result)
+            suite.append(result)
 
     print()
 
@@ -222,13 +170,6 @@ def get_compatibility_id(bench=None):
 def get_pyperf_opts(options):
     opts = []
 
-    if options.debug_single_value:
-        opts.append('--debug-single-value')
-    elif options.rigorous:
-        opts.append('--rigorous')
-    elif options.fast:
-        opts.append('--fast')
-
     if options.verbose:
         opts.append('--verbose')
 
@@ -238,9 +179,5 @@ def get_pyperf_opts(options):
         opts.append('--track-memory')
     if options.inherit_environ:
         opts.append('--inherit-environ=%s' % ','.join(options.inherit_environ))
-    if options.min_time:
-        opts.append('--min-time=%s' % options.min_time)
-    if options.timeout:
-        opts.append('--timeout=%s' % options.timeout)
 
     return opts

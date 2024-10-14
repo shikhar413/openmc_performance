@@ -126,7 +126,7 @@ class VirtualEnvironment:
             raise Exception(f'openmc executable not passed to VirtualEnvironment class')
         if isinstance(openmc, str):
             try:
-                info = _openmcinfo.get_info(openmc)
+                info, _ = _openmcinfo.get_version_info(openmc)
             except FileNotFoundError:
                 print(openmc)
                 raise Exception(f'openmc executable could not be found')
@@ -147,7 +147,7 @@ class VirtualEnvironment:
             _utils.safe_rmtree(root)
             raise  # re-raise
         if not info:
-            info = _openmcinfo.get_info(openmc)
+            info, _ = _openmcinfo.get_version_info(openmc)
         venv_python = os.path.join(root, 'bin', 'python')
         self = cls(root, base=info, openmc=openmc, python=venv_python)
         self.ensure_pip()
@@ -155,11 +155,15 @@ class VirtualEnvironment:
         return self
 
     @classmethod
-    def ensure(cls, root, python=None, **kwargs):
+    def ensure(cls, root, openmc=None, **kwargs):
+        if not openmc:
+            raise Exception(f'openmc executable not passed to VirtualEnvironment class')
+        info, _ = _openmcinfo.get_version_info(openmc)
+        venv_python = os.path.join(root, 'bin', 'python')
         if venv_exists(root):
-            return cls(root)
+            return cls(root, base=info, openmc=openmc, python=venv_python)
         else:
-            return cls.create(root, python, **kwargs)
+            return cls.create(root, openmc, **kwargs)
 
     def __init__(self, root, openmc=None, python=None, *, base=None):
         self.root = root
@@ -185,7 +189,7 @@ class VirtualEnvironment:
                 openmc = self._openmc
             except AttributeError:
                 openmc = resolve_venv_openmc(self.root)
-            self._info = _openmcinfo.get_info(openmc)
+            self._info, _ = _openmcinfo.get_version_info(openmc)
             return self._info
 
     @property
@@ -198,7 +202,7 @@ class VirtualEnvironment:
                 # XXX Use read_venv_config().
                 raise NotImplementedError
                 base_exe = ...
-            self._base = _openmcinfo.get_info(base_exe)
+            self._base, _ = _openmcinfo.get_version_info(base_exe)
             return self._base
 
     def ensure_python_openmc(self):

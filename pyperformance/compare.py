@@ -2,7 +2,6 @@ import csv
 import os.path
 import math
 
-import pyperf
 import statistics
 
 
@@ -20,12 +19,12 @@ class VersionMismatchError(Exception):
 
 
 def format_result(bench):
-    mean = bench.mean()
-    if bench.get_nvalue() >= 2:
-        args = bench.format_values((mean, bench.stdev()))
-        return 'Mean +- std dev: %s +- %s' % args
+    mean = bench.mean
+    if bench.n_trials >= 2:
+        std_dev = bench.std_dev
+        return 'Mean +- std dev: {:.3f} +- {:.3f}'.format(mean, std_dev)
     else:
-        return bench.format_value(mean)
+        return 'Mean: {:.3f}'.format(mean)
 
 
 # A table of 95% confidence intervals for a two-tailed t distribution, as a
@@ -263,15 +262,15 @@ def quantity_delta(base, changed):
 
 
 def display_suite_metadata(suite, title=None):
-    metadata = suite.get_metadata()
+    # TODO-SK check length of data > 0 and all metadata agree across benchmarks
+    data = suite[0].data
     empty = True
     for key, fmt in (
-        ('performance_version', "Performance version: %s"),
-        ('python_version', "Python version: %s"),
-        ('platform', "Report on %s"),
-        ('cpu_count', "Number of logical CPUs: %s"),
+        ('environment', "OS Environment: %s"),
+        ('executable', "OpenMC %s"),
+        ('commitid', "Commit ID: %s"),
     ):
-        if key not in metadata:
+        if key not in data:
             continue
 
         empty = False
@@ -281,24 +280,26 @@ def display_suite_metadata(suite, title=None):
             print()
             title = None
 
-        text = fmt % metadata[key]
+        text = fmt % data[key]
         print(text)
 
-    dates = suite.get_dates()
-    if dates:
-        print("Start date: %s" % dates[0].isoformat(' '))
-        print("End date: %s" % dates[1].isoformat(' '))
+    rev_date = suite[0].revision_date
+    res_date = suite[0].result_date
+    if rev_date:
+        print("Revision date: %s" % rev_date.isoformat(' '))
+    if res_date:
+        print("Result date: %s" % rev_date.isoformat(' '))
         empty = False
 
     if not empty:
         print()
 
 
-def display_benchmark_suite(suite):
-    display_suite_metadata(suite)
+def display_benchmark_suite(suite, title=None):
+    display_suite_metadata(suite, title=title)
 
-    for bench in suite.get_benchmarks():
-        print("### %s ###" % bench.get_name())
+    for bench in suite:
+        print("### %s ###" % bench.name)
         print(format_result(bench))
         print()
 

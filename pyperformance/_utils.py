@@ -89,7 +89,7 @@ import sys
 MS_WINDOWS = (sys.platform == 'win32')
 
 
-def run_cmd(argv, *, env=None, capture=None, verbose=True):
+def run_cmd(argv, *, env=None, capture=None, verbose=True, timeout=None):
     try:
         cmdstr = ' '.join(shlex.quote(a) for a in argv)
     except TypeError:
@@ -125,6 +125,10 @@ def run_cmd(argv, *, env=None, capture=None, verbose=True):
         kw.update(dict(
             encoding='utf-8',
         ))
+    if timeout:
+        kw.update(dict(
+            timeout=timeout,
+        ))
 
     # XXX Use a logger.
     if verbose:
@@ -142,6 +146,7 @@ def run_cmd(argv, *, env=None, capture=None, verbose=True):
             if verbose:
                 print('command failed (not found)')
             return 127, None, None
+        print("OSError found")
         raise
     if proc.returncode != 0 and verbose:
         print(f'Command failed with exit code {proc.returncode}')
