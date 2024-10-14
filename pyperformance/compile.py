@@ -792,8 +792,6 @@ class BenchmarkAll(Application):
                self.config_filename, revision, branch]
         if not self.conf.update:
             cmd.append('--no-update')
-        if not self.conf.system_tune:
-            cmd.append('--no-tune')
 
         self.start = time.monotonic()
         exitcode = self.run_nocheck(*cmd, log_stdout=False)
@@ -810,16 +808,12 @@ class BenchmarkAll(Application):
         # compile, venv and bench errors occur after repository update
         # and system tune
         if exitcode >= EXIT_COMPILE_ERROR:
-            if self.conf.system_tune:
-                # only tune the system once
-                self.conf.system_tune = False
-
             if self.conf.update:
                 # Ony update the repository once
                 self.conf.update = False
 
         if exitcode == 0 or exitcode == EXIT_BENCH_ERROR:
-            self.outputs.append((key, exitcode == EXIT_BENCH_ERROR))
+            self.outputs.append((key, exitcode == 0))
             self.timings.append(dt)
         else:
             self.failed.append(key)

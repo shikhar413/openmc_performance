@@ -100,7 +100,7 @@ def cmd_venv_recreate(options, root, openmc, benchmarks):
             inherit_environ=options.inherit_environ,
         )
         try:
-            venv.install_pyperformance()
+            venv.ensure_pyperformance()
             venv.ensure_reqs(requirements)
         except _venv.RequirementsInstallationFailedError:
             sys.exit(1)
