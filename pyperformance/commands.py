@@ -65,7 +65,7 @@ def cmd_venv_create(options, root, openmc, benchmarks):
         inherit_environ=options.inherit_environ,
     )
     try:
-        venv.install_pyperformance()
+        venv.ensure_pyperformance()
         venv.ensure_reqs(requirements)
     except _venv.RequirementsInstallationFailedError:
         sys.exit(1)
@@ -88,7 +88,7 @@ def cmd_venv_recreate(options, root, openmc, benchmarks):
             inherit_environ=options.inherit_environ,
         )
         try:
-            venv.install_pyperformance()
+            venv.ensure_pyperformance()
             venv.ensure_reqs(requirements)
         except _venv.RequirementsInstallationFailedError:
             sys.exit(1)
@@ -194,8 +194,6 @@ def cmd_compile(options):
     if options is not None:
         if options.no_update:
             conf.update = False
-        if options.no_tune:
-            conf.system_tune = False
     bench = BenchmarkRevision(conf, options.revision, options.branch,
                               patch=options.patch, options=options)
     bench.main()
@@ -228,10 +226,13 @@ def cmd_upload(options):
 
 
 def cmd_show(options):
-    import pyperf
+    import json
     from .compare import display_benchmark_suite
+    from ._benchmarkresult import BenchmarkResult
 
-    suite = pyperf.BenchmarkSuite.load(options.filename)
+    with open(options.filename) as f:
+        json_load = json.load(f)
+    suite = [BenchmarkResult(json_data=data) for data in json_load]
     display_benchmark_suite(suite)
 
 

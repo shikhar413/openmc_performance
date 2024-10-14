@@ -1,6 +1,5 @@
 from collections import namedtuple
 import hashlib
-import json
 import sys
 import time
 import traceback

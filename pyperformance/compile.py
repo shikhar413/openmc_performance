@@ -398,7 +398,7 @@ class BenchmarkRevision(Application):
             patch = os.path.basename(self.patch)
             patch = os.path.splitext(patch)[0]
             filename = "%s-patch-%s" % (filename, patch)
-        filename = filename + ".json.gz"
+        filename = filename + ".json"
         if self.patch:
             self.filename = os.path.join(self.conf.json_patch_dir, filename)
         else:
@@ -441,49 +441,36 @@ class BenchmarkRevision(Application):
             sys.exit(EXIT_VENV_ERROR)
         binname = 'bin'
         base = os.path.basename(python)
-        return os.path.join(self.conf.venv_dir, binname, base)
+        return os.path.join(venv_path, binname, base)
 
     def run_benchmark(self, python=None):
         self.safe_makedirs(os.path.dirname(self.filename))
-        if not python:
-            python = self.python.program
-        if self._dryrun:
-            python = sys.executable
-        cmd = [python, '-u',
+        if os.path.exists(self.filename):
+            _utils.safe_rmfile(self.filename)
+
+        cmd = [self.python, '-u',
                '-m', 'pyperformance',
                'run',
-               '--verbose',
-               '--output', self.filename]
+               '-p', self.openmc.program,
+               '--output', self.filename,
+               '--branch', self.branch]
+        if self.conf.verbose:
+            cmd.append('--verbose')
         if self.options.inherit_environ:
             cmd.append('--inherit-environ=%s' % ','.join(self.options.inherit_environ))
         if self.conf.manifest:
             cmd.extend(('--manifest', self.conf.manifest))
         if self.conf.benchmarks:
             cmd.append('--benchmarks=%s' % self.conf.benchmarks)
-        if self.conf.affinity:
-            cmd.extend(('--affinity', self.conf.affinity))
-        if self.conf.same_loops:
-            cmd.append('--same_loops=%s' % self.conf.same_loops)
+        if self.conf.timeout:
+            cmd.append(('--timeout', str(self.conf.timeout)))
+        if self.conf.n_trials:
+            cmd.extend(('--n-trials', self.conf.n_trials))
+        if self.conf.project:
+            cmd.extend(('--project', self.conf.project))
         exitcode = self.run_nocheck(*cmd)
 
-        if os.path.exists(self.filename):
-            self.update_metadata()
-
         return bool(exitcode)
-
-    def update_metadata(self):
-        metadata = {
-            'commit_id': self.revision,
-            'commit_branch': self.branch,
-            'commit_date': self.commit_date.isoformat(),
-        }
-        if self.patch:
-            metadata['patch_file'] = self.patch
-
-        suite = pyperf.BenchmarkSuite.load(self.filename)
-        for bench in suite:
-            bench.update_metadata(metadata)
-        suite.dump(self.filename, replace=True)
 
     def encode_benchmark(self, bench):
         data = {}
@@ -603,26 +590,33 @@ class BenchmarkRevision(Application):
             venv_path = self.create_venv()
         else:
             venv_path = None
+        self.python = venv_path
 
         return False
-        # TODO-SK handle commands below
-        failed = self.run_benchmark(python)
-        if self.conf.upload:
-            self.upload()
-        return failed
 
     def main(self):
-        self.start = time.monotonic()
+        self.start_compile = time.monotonic()
 
         self.prepare()
         failed = self.compile_bench()
 
-        dt = time.monotonic() - self.start
-        dt = datetime.timedelta(seconds=dt)
-        self.logger.error("Compilation completed in %s" % dt)
-        return
-        # TODO-SK handle commands below, separate timing between setup and benchmark execution
+        self.end_compile = time.monotonic()
+        dt_compile = self.end_compile - self.start_compile
+        dt_compile = datetime.timedelta(seconds=dt_compile)
+        self.logger.error("Compilation completed in %s" % dt_compile)
 
+        self.start_benchmark = time.monotonic()
+        failed = self.run_benchmark()
+        self.end_benchmark = time.monotonic()
+        dt_benchmark = self.end_benchmark - self.start_benchmark
+        dt_benchmark = datetime.timedelta(seconds=dt_benchmark)
+        self.logger.error("Benchmarks completed in %s" % dt_benchmark)
+
+        # TODO-SK handle commands below
+        if self.conf.upload:
+            self.upload()
+
+        # TODO-SK handle upload
         if self.uploaded:
             self.logger.error("Benchmark results uploaded and written into %s"
                               % self.upload_filename)
@@ -687,6 +681,9 @@ def parse_config(filename, command):
     def getint(section, key, default=None):
         return int(getstr(section, key, default))
 
+    def getfloat(section, key, default=None):
+        return float(getstr(section, key, default))
+
     # [config]
     conf.json_dir = getfile('config', 'json_dir')
     conf.json_patch_dir = os.path.join(conf.json_dir, 'patch')
@@ -708,12 +705,19 @@ def parse_config(filename, command):
             conf.jobs = None
 
         # [run_benchmark]
-        conf.system_tune = getboolean('run_benchmark', 'system_tune', True)
         conf.manifest = getfile('run_benchmark', 'manifest', default='')
         conf.benchmarks = getstr('run_benchmark', 'benchmarks', default='')
-        conf.affinity = getstr('run_benchmark', 'affinity', default='')
+        conf.project = getstr('run_benchmark', 'project', default='')
         conf.upload = getboolean('run_benchmark', 'upload', False)
-        conf.same_loops = getfile('run_benchmark', 'same_loops', default='')
+        conf.verbose = getboolean('run_benchmark', 'verbose', False)
+        try:
+            conf.n_trials = getint('run_benchmark', 'n_trials')
+        except KeyError:
+            conf.n_trials = None
+        try:
+            conf.timeout = getfloat('run_benchmark', 'timeout')
+        except KeyError:
+            conf.timeout = None
 
         # paths
         conf.build_dir = os.path.join(conf.repo_dir, 'build')

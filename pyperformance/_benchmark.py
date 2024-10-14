@@ -262,7 +262,7 @@ def _run_perf_script(python, runscript, runid, *,
         print('***Trial {} took {} seconds***'.format(n+1, runtime))
         print()
         timing_results.append(runtime)
-    return BenchmarkResult(timing_results, name)
+    return BenchmarkResult(results=timing_results, name=name)
 
 
 def _get_openmc_timing(openmc_output):

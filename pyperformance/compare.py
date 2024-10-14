@@ -20,7 +20,7 @@ class VersionMismatchError(Exception):
 
 def format_result(bench):
     mean = bench.mean
-    if bench.n_trials >= 2:
+    if bench.std_dev is not None:
         std_dev = bench.std_dev
         return 'Mean +- std dev: {:.3f} +- {:.3f}'.format(mean, std_dev)
     else:
@@ -265,6 +265,13 @@ def display_suite_metadata(suite, title=None):
     # TODO-SK check length of data > 0 and all metadata agree across benchmarks
     data = suite[0].data
     empty = True
+    if title:
+        print(title)
+        print("=" * len(title))
+        print()
+    else:
+        print()
+    print('### Benchmark metadata: ###')
     for key, fmt in (
         ('environment', "OS Environment: %s"),
         ('executable', "OpenMC %s"),
@@ -274,11 +281,6 @@ def display_suite_metadata(suite, title=None):
             continue
 
         empty = False
-        if title:
-            print(title)
-            print("=" * len(title))
-            print()
-            title = None
 
         text = fmt % data[key]
         print(text)
@@ -299,7 +301,7 @@ def display_benchmark_suite(suite, title=None):
     display_suite_metadata(suite, title=title)
 
     for bench in suite:
-        print("### %s ###" % bench.name)
+        print("### Result for benchmark \"%s\": ###" % bench.name)
         print(format_result(bench))
         print()
 

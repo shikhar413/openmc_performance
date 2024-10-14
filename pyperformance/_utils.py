@@ -79,6 +79,15 @@ def safe_rmtree(path):
     return True
 
 
+def safe_rmfile(filepath):
+    if not os.path.exists(filepath):
+        return False
+
+    print("Remove file %s" % path)
+    os.remove(filepath)
+    return True
+
+
 #######################################
 # platform utils
 
