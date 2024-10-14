@@ -14,7 +14,8 @@ import sys
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
+from base64 import b64encode
 
 import pyperformance
 from pyperformance import _utils, _pip
@@ -472,31 +473,7 @@ class BenchmarkRevision(Application):
 
         return bool(exitcode)
 
-    def encode_benchmark(self, bench):
-        data = {}
-        data['environment'] = self.conf.environment
-        data['project'] = self.conf.project
-        data['branch'] = self.branch
-        data['benchmark'] = bench.get_name()
-        # Other benchmark metadata:
-        # - description
-        # - units="seconds", units_title="Time", lessisbetter=True
-        data['commitid'] = self.revision
-        data['revision_date'] = self.commit_date.isoformat()
-        data['executable'] = self.conf.executable
-        data['result_value'] = bench.mean()
-        # Other result metadata: result_date
-        if bench.get_nvalue() == 1:
-            data['std_dev'] = 0
-        else:
-            data['std_dev'] = bench.stdev()
-        values = bench.get_values()
-        data['min'] = min(values)
-        data['max'] = max(values)
-        # Other stats metadata: q1, q3
-        return data
-
-    def upload(self):
+    def upload(self, json_data):
         if self.uploaded:
             raise Exception("already uploaded")
 
@@ -512,19 +489,20 @@ class BenchmarkRevision(Application):
 
         self.safe_makedirs(self.conf.uploaded_json_dir)
 
-        suite = pyperf.BenchmarkSuite.load(self.filename)
-        data = [self.encode_benchmark(bench)
-                for bench in suite]
-        data = dict(json=json.dumps(data))
+        data = dict(json=json.dumps(json_data))
 
         url = self.conf.url
         if not url.endswith('/'):
             url += '/'
         url += 'result/add/json/'
-        self.logger.error("Upload %s benchmarks to %s" % (len(suite), url))
+        self.logger.error("Upload %s benchmarks to %s" % (len(json_data), url))
 
+        params = urlencode(data).encode('utf-8')
         try:
-            response = urlopen(data=urlencode(data).encode('utf-8'), url=url)
+            p = self.conf.authentication.encode('ascii')
+            request = Request(url)
+            request.add_header('Authorization', 'Basic %s' % b64encode(p).decode('ascii'))
+            response = urlopen(request, params)
             body = response.read()
             response.close()
         except HTTPError as err:
@@ -730,12 +708,10 @@ def parse_config(filename, command):
         check_upload = True
 
     # [upload]
-    UPLOAD_OPTIONS = ('url', 'environment', 'executable', 'project')
+    UPLOAD_OPTIONS = ('url', 'authentication')
 
     conf.url = getstr('upload', 'url', default='')
-    conf.executable = getstr('upload', 'executable', default='')
-    conf.project = getstr('upload', 'project', default='')
-    conf.environment = getstr('upload', 'environment', default='')
+    conf.authentication = getstr('upload', 'authentication', default='')
 
     if check_upload and any(not getattr(conf, attr) for attr in UPLOAD_OPTIONS):
         print("ERROR: Upload requires to set the following "

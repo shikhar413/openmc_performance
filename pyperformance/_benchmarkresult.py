@@ -11,11 +11,11 @@ class BenchmarkResult:
             self._result_date = datetime.datetime.now(datetime.UTC)
             self._data = {
                 'benchmark': name,
-                'results_value': self.mean,
+                'result_value': self.mean,
                 'std_dev': self.std_dev,
                 'min': self.min,
                 'max': self.max,
-                'result_date': self.result_date
+                'result_date': self.result_date.isoformat()
             }
             self._revision_date = None
             self._commitid = None
@@ -34,8 +34,6 @@ class BenchmarkResult:
             self._result_date = datetime.datetime.fromisoformat(json_data['result_date'])
             self._revision_date = datetime.datetime.fromisoformat(json_data['revision_date'])
             # Update json data dates to datetime objects as well
-            self._data['result_date'] = self._result_date
-            self._data['revision_date'] = self._revision_date
             self._commitid = json_data['commitid']
             self._version = json_data['executable']
             self._branch = json_data['branch']
@@ -73,7 +71,7 @@ class BenchmarkResult:
 
     @property
     def mean(self):
-        return statistics.mean(self.results) if self.results else self.data['results_value']
+        return statistics.mean(self.results) if self.results else self.data['result_value']
 
     @property
     def std_dev(self):
@@ -110,7 +108,7 @@ class BenchmarkResult:
         #TODO-SK add inactive/active calc rates, mpi/omp params to executable name
         commitid, date, version = executable_info
         self.data.update({
-            'revision_date': date,
+            'revision_date': date.isoformat(),
             'commitid': commitid,
             'executable': version,
             'branch': branch,

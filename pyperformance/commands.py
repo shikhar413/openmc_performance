@@ -207,22 +207,24 @@ def cmd_compile_all(options):
 
 
 def cmd_upload(options):
-    import pyperf
     from .compile import parse_config, parse_date, BenchmarkRevision
+    from ._benchmarkresult import BenchmarkResult
+    import json
 
     conf = parse_config(options.config_file, "upload")
 
     filename = options.json_file
-    bench = pyperf.BenchmarkSuite.load(filename)
-    metadata = bench.get_metadata()
-    revision = metadata['commit_id']
-    branch = metadata['commit_branch']
-    commit_date = parse_date(metadata['commit_date'])
+    with open(filename) as f:
+        json_data = json.load(f)
+    # TODO-SK make sure json_data has length at least 1
+    revision = json_data[0]['commitid']
+    branch = json_data[0]['branch']
+    commit_date = json_data[0]['revision_date']
 
     bench = BenchmarkRevision(conf, revision, branch,
                               filename=filename, commit_date=commit_date,
                               setup_log=False, options=options)
-    bench.upload()
+    bench.upload(json_data)
 
 
 def cmd_show(options):
