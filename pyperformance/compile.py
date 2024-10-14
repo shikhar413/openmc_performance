@@ -448,12 +448,14 @@ class BenchmarkRevision(Application):
         self.safe_makedirs(os.path.dirname(self.filename))
         if os.path.exists(self.filename):
             _utils.safe_rmfile(self.filename)
+        venv_path = os.path.abspath(os.path.join(os.path.dirname(self.python), '..'))
 
         cmd = [self.python, '-u',
                '-m', 'pyperformance',
                'run',
                '-p', self.openmc.program,
                '--output', self.filename,
+               '--venv', venv_path,
                '--branch', self.branch]
         if self.conf.verbose:
             cmd.append('--verbose')
@@ -551,10 +553,6 @@ class BenchmarkRevision(Application):
             self.logger.error("Disable upload on patched Python")
             self.conf.upload = False
 
-        if not self.conf.install and self.conf.upload:
-            self.logger.error("Disable upload if Python is not installed")
-            self.conf.upload = False
-
     def compile_bench(self):
         self.openmc = OpenMC(self, self.conf)
 
@@ -583,18 +581,19 @@ class BenchmarkRevision(Application):
         dt_compile = datetime.timedelta(seconds=dt_compile)
         self.logger.error("Compilation completed in %s" % dt_compile)
 
-        self.start_benchmark = time.monotonic()
-        failed = self.run_benchmark()
-        self.end_benchmark = time.monotonic()
-        dt_benchmark = self.end_benchmark - self.start_benchmark
-        dt_benchmark = datetime.timedelta(seconds=dt_benchmark)
-        self.logger.error("Benchmarks completed in %s" % dt_benchmark)
+        if not failed:
+            self.start_benchmark = time.monotonic()
+            failed = self.run_benchmark()
+            self.end_benchmark = time.monotonic()
+            dt_benchmark = self.end_benchmark - self.start_benchmark
+            dt_benchmark = datetime.timedelta(seconds=dt_benchmark)
+            self.logger.error("Benchmarks completed in %s" % dt_benchmark)
 
-        # TODO-SK handle commands below
-        if self.conf.upload:
-            self.upload()
+        if not failed and self.conf.upload:
+            with open(self.filename) as f:
+                json_data = json.load(f)
+            self.upload(json_data)
 
-        # TODO-SK handle upload
         if self.uploaded:
             self.logger.error("Benchmark results uploaded and written into %s"
                               % self.upload_filename)

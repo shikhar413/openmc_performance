@@ -290,7 +290,7 @@ def display_suite_metadata(suite, title=None):
     if rev_date:
         print("Revision date: %s" % rev_date.isoformat(' '))
     if res_date:
-        print("Result date: %s" % rev_date.isoformat(' '))
+        print("Result date: %s" % res_date.isoformat(' '))
         empty = False
 
     if not empty:
