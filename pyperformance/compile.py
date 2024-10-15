@@ -475,6 +475,13 @@ class BenchmarkRevision(Application):
 
         return bool(exitcode)
 
+    def clean_venv(self):
+        venv_path = os.path.abspath(os.path.join(os.path.dirname(self.python), '..'))
+        cmd = [sys.executable, '-m', 'pyperformance', 'venv', 'remove',
+               '-p', self.openmc.program, '--venv', venv_path]
+        exitcode = self.run_nocheck(*cmd)
+        return bool(exitcode)
+
     def upload(self, json_data):
         if self.uploaded:
             raise Exception("already uploaded")
@@ -604,6 +611,9 @@ class BenchmarkRevision(Application):
             self.logger.error("Benchmark result written into %s"
                               % self.filename)
 
+        if self.conf.clean_venv:
+            failed = self.clean_venv()
+
         if failed:
             sys.exit(EXIT_BENCH_ERROR)
 
@@ -687,6 +697,7 @@ def parse_config(filename, command):
         conf.project = getstr('run_benchmark', 'project', default='')
         conf.upload = getboolean('run_benchmark', 'upload', False)
         conf.verbose = getboolean('run_benchmark', 'verbose', False)
+        conf.clean_venv = getboolean('run_benchmark', 'clean_venv', True)
         try:
             conf.n_trials = getint('run_benchmark', 'n_trials')
         except KeyError:
