@@ -21,7 +21,7 @@ def get_version_info(openmc):
     except subprocess.CalledProcessError:
         raise Exception(f'could not get info for {openmc}')
     text_split = text.split('\n')
-    if len(text_split) < 2 or 'Git SHA1' not in text_split[1] or 'OpenMC version' not in text_split[0]:
+    if len(text_split) < 2 or 'Commit hash' not in text_split[1] or 'OpenMC version' not in text_split[0]:
         raise Exception(f'could not get info for {openmc}')
     git_sha = text_split[1].split(': ', 1)[-1]
     version = text_split[0].split('version ')[-1]
